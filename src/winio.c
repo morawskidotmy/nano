@@ -23,6 +23,8 @@
 #include "revision.h"
 
 #include <ctype.h>
+#include <time.h>
+#include <sys/time.h>
 #ifdef __linux__
 #include <sys/ioctl.h>
 #endif
@@ -1147,10 +1149,10 @@ int parse_kbinput(WINDOW *frame)
 		return CONTROL_DELETE;
 	else if (keycode == controlshiftdelete)
 		return CONTROL_SHIFT_DELETE;
-	else if (keycode == shiftup) {
+	else if (keycode == shiftup || keycode == SHIFT_UP) {
 		shift_held = TRUE;
 		return KEY_UP;
-	} else if (keycode == shiftdown) {
+	} else if (keycode == shiftdown || keycode == SHIFT_DOWN) {
 		shift_held = TRUE;
 		return KEY_DOWN;
 	} else if (keycode == shiftcontrolleft) {
@@ -1585,10 +1587,25 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
 }
 
 #ifdef ENABLE_MOUSE
+static bool mouse_is_dragging = FALSE;
+static long last_click_time_ms = 0;
+static int click_count = 0;
+static int last_click_row = -1;
+static int last_click_col = -1;
+
+/* Get current time in milliseconds. */
+static long get_time_ms(void)
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec * 1000L + tv.tv_usec / 1000L;
+}
+
 /* Handle clicks of the first mouse button, and rolls of the mouse wheel.
  * Store the coordinates of the mouse event in `mouse_x` and `mouse_y`.
  * Return -1 on error, 0 if the mouse event needs handling, 1 if it has
- * been handled by putting back keystrokes, or 2 if it's been ignored. */
+ * been handled by putting back keystrokes, or 2 if it's been ignored.
+ * Return 3 for drag events that extend selection. */
 int get_mouseinput(int *mouse_y, int *mouse_x)
 {
 	bool in_middle, in_footer;
@@ -1605,8 +1622,39 @@ int get_mouseinput(int *mouse_y, int *mouse_x)
 	*mouse_x = event.x - (in_middle ? margin : 0);
 	*mouse_y = event.y;
 
+	/* Handle mouse button press - start of potential drag selection. */
+	if (event.bstate & BUTTON1_PRESSED) {
+		if (in_middle && currmenu == MMAIN) {
+			long now = get_time_ms();
+			int row = event.y, col = event.x;
+			wmouse_trafo(midwin, &row, &col, FALSE);
+
+			/* VS Code uses ~500ms window for multi-click detection. */
+			if (now - last_click_time_ms <= 500 && row == last_click_row &&
+					abs(col - last_click_col) <= 2) {
+				click_count++;
+				if (click_count > 3)
+					click_count = 1;
+			} else {
+				click_count = 1;
+			}
+			last_click_time_ms = now;
+			last_click_row = row;
+			last_click_col = col;
+			mouse_is_dragging = TRUE;
+			return 0;
+		}
+	}
+
+	/* Handle mouse drag - extend selection while dragging. */
+	if ((event.bstate & REPORT_MOUSE_POSITION) && mouse_is_dragging) {
+		if (in_middle && currmenu == MMAIN)
+			return 3;
+	}
+
 	/* Handle clicks/releases of the first mouse button. */
 	if (event.bstate & (BUTTON1_RELEASED | BUTTON1_CLICKED)) {
+		mouse_is_dragging = FALSE;
 		/* Clicking in the "scrollbar" goes to the roughly corresponding line. */
 		if (in_middle && sidebar && event.x == (COLS - 1) && currmenu == MMAIN) {
 			wmouse_trafo(midwin, mouse_y, mouse_x, FALSE);
@@ -1699,6 +1747,11 @@ int get_mouseinput(int *mouse_y, int *mouse_x)
 #endif
 	/* Ignore all other mouse events. */
 	return 2;
+}
+
+int get_click_count(void)
+{
+	return click_count;
 }
 #endif /* ENABLE_MOUSE */
 

@@ -1,5 +1,6 @@
 *~
 *.bak
+analysis.md
 *.o
 *.orig
 *.patch

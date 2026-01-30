@@ -455,8 +455,8 @@ void disable_mouse_support(void)
 
 void enable_mouse_support(void)
 {
-	mousemask(ALL_MOUSE_EVENTS, NULL);
-	oldinterval = mouseinterval(50);
+	mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+	oldinterval = mouseinterval(200);
 }
 
 /* Switch mouse support on or off, as needed. */
@@ -1341,10 +1341,10 @@ void unbound_key(int code)
 int process_click(void)
 {
 	int click_row, click_col;
-	int retval = get_mouseinput(&click_row, &click_col);  /* Handles shortcuts. */
+	int retval = get_mouseinput(&click_row, &click_col);
 
 	/* If the click is wrong or already handled, we're done. */
-	if (retval != 0)
+	if (retval != 0 && retval != 3)
 		return retval;
 
 	/* If the click was in the edit window, put the cursor in that spot. */
@@ -1371,16 +1371,56 @@ int process_click(void)
 								actual_last_column(leftedge, click_col));
 
 #ifndef NANO_TINY
-		/* Clicking there where the cursor is toggles the mark. */
-		if (row_count == 0 && openfile->current_x == was_x) {
-			do_mark();
-			if (ISSET(STATEFLAGS))
-				titlebar(NULL);
-		} else
-#endif
-			/* The cursor moved; clean the cutbuffer on the next cut. */
-			keep_cutbuffer = FALSE;
+		int clicks = get_click_count();
 
+		/* Handle drag to extend selection. */
+		if (retval == 3) {
+			if (!openfile->mark) {
+				openfile->mark = was_current;
+				openfile->mark_x = was_x;
+				openfile->softmark = TRUE;
+			}
+			refresh_needed = TRUE;
+			edit_redraw(was_current, CENTERING);
+			return 2;
+		}
+
+		/* Double-click selects word (VS Code style: stops at punctuation). */
+		if (clicks == 2) {
+			openfile->mark = openfile->current;
+			/* Move backward while on a word character. */
+			while (openfile->current_x > 0 &&
+					is_word_char(openfile->current->data + openfile->current_x - 1, FALSE))
+				openfile->current_x--;
+			openfile->mark_x = openfile->current_x;
+			/* Move forward while on a word character. */
+			while (openfile->current->data[openfile->current_x] != '\0' &&
+					is_word_char(openfile->current->data + openfile->current_x, FALSE))
+				openfile->current_x++;
+			openfile->softmark = FALSE;
+			refresh_needed = TRUE;
+			edit_redraw(was_current, CENTERING);
+			return 2;
+		}
+
+		/* Triple-click selects whole line. */
+		if (clicks == 3) {
+			openfile->mark = openfile->current;
+			openfile->mark_x = 0;
+			openfile->current_x = strlen(openfile->current->data);
+			openfile->softmark = FALSE;
+			refresh_needed = TRUE;
+			edit_redraw(was_current, CENTERING);
+			return 2;
+		}
+
+		/* Single click: clear any existing mark and position cursor. */
+		if (clicks == 1 && openfile->mark) {
+			openfile->mark = NULL;
+			refresh_needed = TRUE;
+		}
+#endif
+		keep_cutbuffer = FALSE;
 		edit_redraw(was_current, CENTERING);
 	}
 
@@ -1884,6 +1924,15 @@ int main(int argc, char **argv)
 
 	/* Set a sensible default, different from what Pico does. */
 	SET(NO_WRAP);
+
+	/* Enable modern defaults: auto-indent, mouse, and modern keybindings. */
+#ifndef NANO_TINY
+	SET(AUTOINDENT);
+#endif
+#ifdef ENABLE_MOUSE
+	SET(USE_MOUSE);
+#endif
+	SET(MODERN_BINDINGS);
 
 	/* If the executable's name starts with 'r', activate restricted mode. */
 	if (*(tail(argv[0])) == 'r')

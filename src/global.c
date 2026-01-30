@@ -1405,6 +1405,11 @@ void shortcut_init(void)
 	}
 	add_to_sclist(MMAIN, "M-7", 0, to_prev_block, 0);
 	add_to_sclist(MMAIN, "M-8", 0, to_next_block, 0);
+#ifndef NANO_TINY
+	/* Shift+Up/Down for line selection (VS Code style). */
+	add_to_sclist(MMAIN, "Sh-Up", SHIFT_UP, do_up, 0);
+	add_to_sclist(MMAIN, "Sh-Down", SHIFT_DOWN, do_down, 0);
+#endif
 #ifdef ENABLE_JUSTIFY
 	add_to_sclist(MMAIN, "M-(", 0, to_para_begin, 0);
 	add_to_sclist(MMAIN, "M-9", 0, to_para_begin, 0);

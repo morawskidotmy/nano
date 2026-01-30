@@ -608,6 +608,7 @@ int get_kbinput(WINDOW *win, bool showcursor);
 char *get_verbatim_kbinput(WINDOW *win, size_t *count);
 #ifdef ENABLE_MOUSE
 int get_mouseinput(int *mouse_y, int *mouse_x);
+int get_click_count(void);
 #endif
 void blank_edit(void);
 void blank_statusbar(void);
